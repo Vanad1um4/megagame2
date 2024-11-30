@@ -1,5 +1,7 @@
-<div class="flex p-2.5 bg-black/50 text-white rounded-br-lg">
+<div *ngIf="isVisible"
+     class="flex flex-col p-2.5 bg-black/50 text-white rounded-br-lg">
+  <h1 class="mb-4 text-3xl">Debug info:</h1>
 
-  <div>debug info</div>
+  <div class="">Animals: {{ animalsCount }}</div>
 
 </div>
