@@ -22,7 +22,14 @@ app-canvas {
   justify-content: center;
   pointer-events: none;
 
-  app-bottom-menu {
+  app-debug-window {
+    position: fixed;
+    top: 0;
+    left: 0;
+    pointer-events: auto;
+  }
+
+  app-menu-bottom {
     pointer-events: auto;
   }
 }

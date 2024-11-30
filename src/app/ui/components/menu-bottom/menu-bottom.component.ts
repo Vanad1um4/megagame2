@@ -1,16 +1,18 @@
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
 
-import { AnimalsService } from '../../../../logic/animals.service';
+import { AnimalsService } from '../../../logic/animals.service';
 
 @Component({
-  selector: 'app-bottom-menu',
+  selector: 'app-menu-bottom',
   standalone: true,
-  imports: [CommonModule],
-  templateUrl: './bottom-menu.component.html',
-  styleUrl: './bottom-menu.component.scss',
+  imports: [
+    CommonModule
+  ],
+  templateUrl: './menu-bottom.component.html',
+  styleUrl: './menu-bottom.component.scss',
 })
-export class BottomMenuComponent {
+export class MenuBottomComponent {
 
   constructor(private animalsService: AnimalsService) { }
 
