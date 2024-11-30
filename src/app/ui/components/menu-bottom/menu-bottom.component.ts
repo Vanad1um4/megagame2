@@ -17,6 +17,10 @@ export class MenuBottomComponent {
   constructor(private animalsService: AnimalsService) { }
 
   addAnimal(): void {
+    // [...Array(1000)].forEach(() => {
+    //   this.animalsService.addRandomAnimal();
+    // });
+
     this.animalsService.addRandomAnimal();
   }
 
