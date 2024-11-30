@@ -1,3 +1,4 @@
+import { ANIMAL_SETTINGS } from "../shared/const";
 import { Coordinates } from "../shared/type";
 
 export class Animal {
@@ -5,9 +6,14 @@ export class Animal {
   private satiety: number;
   private readonly MAX_SATIETY = 100;
 
+  private angle: number = 0;
+  private speed: number = 0;
+  private movementTimer: number = 0;
+
   constructor(coordinates: Coordinates, initialSatiety: number = 100) {
     this.coordinates = coordinates;
     this.satiety = Math.min(initialSatiety, this.MAX_SATIETY);
+    this.resetMovement();
   }
 
   public getCoordinates(): Coordinates {
@@ -36,5 +42,30 @@ export class Animal {
 
   public isDead(): boolean {
     return this.satiety <= 0;
+  }
+
+  public move(): void {
+    this.movementTimer--;
+
+    if (this.movementTimer <= 0) {
+      this.resetMovement();
+    }
+
+    this.coordinates = {
+      x: this.coordinates.x + Math.sin(this.angle) * this.speed,
+      y: this.coordinates.y - Math.cos(this.angle) * this.speed
+    };
+  }
+
+  private resetMovement(): void {
+    this.angle = Math.random() * Math.PI * 2;
+
+    this.speed = ANIMAL_SETTINGS.BASE_SPEED + Math.random() * ANIMAL_SETTINGS.SPEED_VARIATION;
+    this.movementTimer = ANIMAL_SETTINGS.MIN_MOVEMENT_TIME +
+      Math.floor(Math.random() * (ANIMAL_SETTINGS.MAX_MOVEMENT_TIME - ANIMAL_SETTINGS.MIN_MOVEMENT_TIME));
+  }
+
+  public getAngle(): number {
+    return this.angle;
   }
 }

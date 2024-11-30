@@ -62,3 +62,11 @@ export const SCALE_LIMITS: ScaleLimits = {
   MIN: 4,
   MAX: 7,
 };
+
+export const ANIMAL_SETTINGS = {
+  SIZE: 15,
+  BASE_SPEED: 0.01,
+  SPEED_VARIATION: 0.1,
+  MIN_MOVEMENT_TIME: 10,
+  MAX_MOVEMENT_TIME: 15,
+};

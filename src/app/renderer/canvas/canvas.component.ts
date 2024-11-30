@@ -2,7 +2,11 @@ import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BehaviorSubject, fromEvent, Subject, takeUntil, throttleTime } from 'rxjs';
+
+import { Animal } from '../../logic/animal.model';
+import { AnimalsService } from '../../logic/animals.service';
 import { StateService } from '../../logic/state.service';
+import { ANIMAL_SETTINGS } from '../../shared/const';
 
 interface Point {
   x: number;
@@ -43,8 +47,11 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
   private app!: Application;
   private worldContainer!: Container;
   private tileContainer!: Container;
+  private animalsContainer!: Container;
   private tileTexture!: Texture;
+  private animalTexture!: Texture;
   private activeTiles: Map<string, Sprite> = new Map();
+  private activeAnimals: Map<string, Sprite> = new Map();
 
   private destroy$ = new Subject<void>();
   private offset$ = new BehaviorSubject<Point>({ x: 0, y: 0 });
@@ -55,7 +62,8 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
 
   constructor(
     private ngZone: NgZone,
-    private stateService: StateService
+    private stateService: StateService,
+    private animalsService: AnimalsService
   ) { }
 
   async ngOnInit() {
@@ -64,6 +72,7 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     this.initWorld();
     this.setupControls();
     this.startGameLoop();
+    this.subscribeToAnimals();
   }
 
   private async initPixiApp() {
@@ -77,6 +86,13 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private async loadTextures() {
+    await Promise.all([
+      this.loadGroundTexture(),
+      this.loadAnimalTexture()
+    ]);
+  }
+
+  private async loadGroundTexture() {
     return new Promise<void>((resolve) => {
       const image = new Image();
       image.onload = () => {
@@ -100,10 +116,24 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private async loadAnimalTexture() {
+    return new Promise<void>((resolve) => {
+      const graphics = new Graphics();
+      graphics.beginFill(0xFF0000);
+      graphics.drawCircle(ANIMAL_SETTINGS.SIZE / 2, ANIMAL_SETTINGS.SIZE / 2, ANIMAL_SETTINGS.SIZE / 3);
+      graphics.endFill();
+      this.animalTexture = this.app.renderer.generateTexture(graphics);
+      resolve();
+    });
+  }
+
   private initWorld() {
     this.worldContainer = new Container();
     this.tileContainer = new Container();
+    this.animalsContainer = new Container();
+
     this.worldContainer.addChild(this.tileContainer);
+    this.worldContainer.addChild(this.animalsContainer);
     this.app.stage.addChild(this.worldContainer);
 
     this.updateVisibleTiles();
@@ -141,7 +171,7 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
           sprite.y = y * this.TILE_SIZE;
           sprite.width = this.TILE_SIZE;
           sprite.height = this.TILE_SIZE;
-          sprite.tint = 0x808080; // Стандартный серый цвет для всех клеток
+          sprite.tint = 0x808080;
 
           this.tileContainer.addChild(sprite);
           this.activeTiles.set(key, sprite);
@@ -149,7 +179,6 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    // Удаляем неиспользуемые тайлы
     for (const [key, sprite] of this.activeTiles) {
       if (!newTileKeys.has(key)) {
         sprite.destroy();
@@ -216,6 +245,40 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
         this.updateVisibleTiles();
       });
     });
+  }
+
+  private subscribeToAnimals() {
+    this.animalsService.getAnimalsObservable()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(animals => {
+        this.updateAnimals(animals);
+      });
+  }
+
+  private updateAnimals(animals: Map<string, Animal>) {
+    for (const [id, sprite] of this.activeAnimals) {
+      if (!animals.has(id)) {
+        sprite.destroy();
+        this.activeAnimals.delete(id);
+      }
+    }
+
+    for (const [id, animal] of animals) {
+      const coordinates = animal.getCoordinates();
+      let sprite = this.activeAnimals.get(id);
+
+      if (!sprite) {
+        sprite = new Sprite(this.animalTexture);
+        sprite.width = ANIMAL_SETTINGS.SIZE;
+        sprite.height = ANIMAL_SETTINGS.SIZE;
+        sprite.anchor.set(0.5);
+        this.animalsContainer.addChild(sprite);
+        this.activeAnimals.set(id, sprite);
+      }
+
+      sprite.x = (coordinates.x * this.TILE_SIZE) + (this.TILE_SIZE / 2);
+      sprite.y = (coordinates.y * this.TILE_SIZE) + (this.TILE_SIZE / 2);
+    }
   }
 
   ngAfterViewInit() {

@@ -10,12 +10,15 @@ import { Animal } from './animal.model';
 export class AnimalsService {
   private animals: Map<string, Animal> = new Map();
   private animalsSubject = new BehaviorSubject<Map<string, Animal>>(this.animals);
+  private lastAnimalId = 0;
 
-  constructor() { }
+  constructor() {
+    setInterval(() => this.updateAnimals(), 50);
+  }
 
   public addRandomAnimal(): string {
-    const coordinates = this.generateRandomCoordinates();
-    return this.addAnimal(coordinates);
+    // const coordinates = this.generateRandomCoordinates();
+    return this.addAnimal({ x: 0, y: 0 });
   }
 
   private addAnimal(coordinates: Coordinates, initialSatiety: number = 100): string {
@@ -74,10 +77,17 @@ export class AnimalsService {
   }
 
   private generateAnimalId(): string {
-    return `animal_${ Date.now() }_${ Math.random().toString(36).substr(2, 9) }`;
+    return String(++this.lastAnimalId);
   }
 
   private notifyChange(): void {
     this.animalsSubject.next(new Map(this.animals));
+  }
+
+  private updateAnimals(): void {
+    for (const animal of this.animals.values()) {
+      animal.move();
+    }
+    this.notifyChange();
   }
 }

@@ -1,6 +1,6 @@
-
 import { CommonModule } from '@angular/common';
 import { Component } from '@angular/core';
+
 import { AnimalsService } from '../../../../logic/animals.service';
 
 @Component({
