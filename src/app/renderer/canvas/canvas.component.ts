@@ -5,6 +5,8 @@ import { BehaviorSubject, fromEvent, Subject, takeUntil, throttleTime } from 'rx
 
 import { Animal } from '../../logic/animal.model';
 import { AnimalsService } from '../../logic/animals.service';
+import { Food } from '../../logic/food.model';
+import { FoodService } from '../../logic/food.service';
 import { StateService } from '../../logic/state.service';
 import { ANIMAL_SETTINGS } from '../../shared/const';
 
@@ -23,7 +25,9 @@ interface VisibleArea {
 @Component({
   selector: 'app-canvas',
   standalone: true,
-  imports: [CommonModule],
+  imports: [
+    CommonModule,
+  ],
   templateUrl: './canvas.component.html',
   styleUrl: './canvas.component.scss',
 })
@@ -38,10 +42,13 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
   private worldContainer!: Container;
   private tileContainer!: Container;
   private animalsContainer!: Container;
+  private foodContainer!: Container;
   private tileTexture!: Texture;
   private animalTexture!: Texture;
+  private foodTexture!: Texture;
   private activeTiles: Map<string, Sprite> = new Map();
   private activeAnimals: Map<string, Sprite> = new Map();
+  private activeFood: Map<string, Sprite> = new Map();
 
   private destroy$ = new Subject<void>();
   private offset$ = new BehaviorSubject<Point>({ x: 0, y: 0 });
@@ -53,7 +60,8 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
   constructor(
     private ngZone: NgZone,
     private stateService: StateService,
-    private animalsService: AnimalsService
+    private animalsService: AnimalsService,
+    private foodService: FoodService
   ) { }
 
   public async ngOnInit() {
@@ -64,6 +72,7 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     this.centerView();
     this.startGameLoop();
     this.subscribeToAnimals();
+    this.subscribeToFood();
   }
 
   public ngAfterViewInit() {
@@ -110,8 +119,20 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
   private async loadTextures() {
     await Promise.all([
       this.loadGroundTexture(),
-      this.loadAnimalTexture()
+      this.loadAnimalTexture(),
+      this.loadFoodTexture()
     ]);
+  }
+
+  private async loadFoodTexture() {
+    return new Promise<void>((resolve) => {
+      const graphics = new Graphics();
+      graphics.beginFill(0x00FF00);
+      graphics.drawCircle(ANIMAL_SETTINGS.SIZE / 2, ANIMAL_SETTINGS.SIZE / 2, ANIMAL_SETTINGS.SIZE / 4);
+      graphics.endFill();
+      this.foodTexture = this.app.renderer.generateTexture(graphics);
+      resolve();
+    });
   }
 
   private async loadGroundTexture() {
@@ -153,8 +174,10 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     this.worldContainer = new Container();
     this.tileContainer = new Container();
     this.animalsContainer = new Container();
+    this.foodContainer = new Container();
 
     this.worldContainer.addChild(this.tileContainer);
+    this.worldContainer.addChild(this.foodContainer);
     this.worldContainer.addChild(this.animalsContainer);
     this.app.stage.addChild(this.worldContainer);
 
@@ -302,4 +325,40 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
         this.updateAnimals(animals);
       });
   }
+
+
+  private updateFood(food: Map<string, Food>) {
+    for (const [id, sprite] of this.activeFood) {
+      if (!food.has(id)) {
+        sprite.destroy();
+        this.activeFood.delete(id);
+      }
+    }
+
+    for (const [id, foodItem] of food) {
+      const coordinates = foodItem.getCoordinates();
+      let sprite = this.activeFood.get(id);
+
+      if (!sprite) {
+        sprite = new Sprite(this.foodTexture);
+        sprite.width = ANIMAL_SETTINGS.SIZE;
+        sprite.height = ANIMAL_SETTINGS.SIZE;
+        sprite.anchor.set(0.5);
+        this.foodContainer.addChild(sprite);
+        this.activeFood.set(id, sprite);
+      }
+
+      sprite.x = (coordinates.x * this.TILE_SIZE) + (this.TILE_SIZE / 2);
+      sprite.y = (coordinates.y * this.TILE_SIZE) + (this.TILE_SIZE / 2);
+    }
+  }
+
+  private subscribeToFood() {
+    this.foodService.getFoodObservable()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(food => {
+        this.updateFood(food);
+      });
+  }
+
 }
