@@ -1,55 +1,32 @@
 import { CommonModule } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
-import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
-import { BehaviorSubject, fromEvent, Subject, takeUntil, throttleTime } from 'rxjs';
+import { Application, Container } from 'pixi.js';
+import { BehaviorSubject, Subject, fromEvent } from 'rxjs';
+import { takeUntil, throttleTime } from 'rxjs/operators';
 
-import { Animal } from '../../logic/animal.model';
-import { AnimalsService } from '../../logic/animals.service';
-import { Food } from '../../logic/food.model';
-import { FoodService } from '../../logic/food.service';
-import { StateService } from '../../logic/state.service';
-import { ANIMAL_SETTINGS } from '../../shared/const';
+import { AnimalLayerService } from './layers/animal-layer.service';
+import { FoodLayerService } from './layers/food-layer.service';
+import { TileLayerService } from './layers/tile-layer.service';
+import { TextureManagerService } from './services/texture-manager.service';
 
 interface Point {
   x: number;
   y: number;
 }
 
-interface VisibleArea {
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
-}
-
 @Component({
   selector: 'app-canvas',
   standalone: true,
-  imports: [
-    CommonModule,
-  ],
+  imports: [CommonModule],
   templateUrl: './canvas.component.html',
-  styleUrl: './canvas.component.scss',
+  styleUrls: ['./canvas.component.scss']
 })
 export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('gameCanvas', { static: true })
-  public canvasRef!: ElementRef<HTMLCanvasElement>;
-
-  private readonly TILE_SIZE = 100;
-  private readonly BUFFER_TILES = 1;
+  private canvasRef!: ElementRef<HTMLCanvasElement>;
 
   private app!: Application;
   private worldContainer!: Container;
-  private tileContainer!: Container;
-  private animalsContainer!: Container;
-  private foodContainer!: Container;
-  private tileTexture!: Texture;
-  private animalTexture!: Texture;
-  private foodTexture!: Texture;
-  private activeTiles: Map<string, Sprite> = new Map();
-  private activeAnimals: Map<string, Sprite> = new Map();
-  private activeFood: Map<string, Sprite> = new Map();
-
   private destroy$ = new Subject<void>();
   private offset$ = new BehaviorSubject<Point>({ x: 0, y: 0 });
   private tempOffset$ = new BehaviorSubject<Point>({ x: 0, y: 0 });
@@ -59,20 +36,16 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
 
   constructor(
     private ngZone: NgZone,
-    private stateService: StateService,
-    private animalsService: AnimalsService,
-    private foodService: FoodService
+    private tileLayer: TileLayerService,
+    private animalLayer: AnimalLayerService,
+    private foodLayer: FoodLayerService,
+    private textureManager: TextureManagerService
   ) { }
 
   public async ngOnInit() {
-    await this.initPixiApp();
-    await this.loadTextures();
-    this.initWorld();
+    await this.initGame();
     this.setupControls();
-    this.centerView();
     this.startGameLoop();
-    this.subscribeToAnimals();
-    this.subscribeToFood();
   }
 
   public ngAfterViewInit() {
@@ -82,7 +55,6 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
         if (parent) {
           this.app.renderer.resize(parent.clientWidth, parent.clientHeight);
           this.centerView();
-          this.updateVisibleTiles();
         }
       }
     });
@@ -93,7 +65,24 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
   public ngOnDestroy() {
     this.destroy$.next();
     this.destroy$.complete();
+
+    this.tileLayer.destroy();
+    this.animalLayer.destroy();
+    this.foodLayer.destroy();
     this.app.destroy(true);
+  }
+
+  private async initGame() {
+    await this.initPixiApp();
+    const textures = await this.textureManager.loadTextures(this.app);
+
+    this.initWorld();
+
+    this.tileLayer.initLayer(textures.tileTexture);
+    this.animalLayer.initLayer(textures.animalTexture);
+    this.foodLayer.initLayer(textures.foodTexture);
+
+    this.centerView();
   }
 
   private async initPixiApp() {
@@ -106,6 +95,14 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private initWorld() {
+    this.worldContainer = new Container();
+    this.worldContainer.addChild(this.tileLayer.getContainer());
+    this.worldContainer.addChild(this.foodLayer.getContainer());
+    this.worldContainer.addChild(this.animalLayer.getContainer());
+    this.app.stage.addChild(this.worldContainer);
+  }
+
   private centerView() {
     const centerX = this.app.screen.width / 2;
     const centerY = this.app.screen.height / 2;
@@ -114,131 +111,6 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
       x: centerX,
       y: centerY
     });
-  }
-
-  private async loadTextures() {
-    await Promise.all([
-      this.loadGroundTexture(),
-      this.loadAnimalTexture(),
-      this.loadFoodTexture()
-    ]);
-  }
-
-  private async loadFoodTexture() {
-    return new Promise<void>((resolve) => {
-      const graphics = new Graphics();
-      graphics.beginFill(0x00FF00);
-      graphics.drawCircle(ANIMAL_SETTINGS.SIZE / 2, ANIMAL_SETTINGS.SIZE / 2, ANIMAL_SETTINGS.SIZE / 4);
-      graphics.endFill();
-      this.foodTexture = this.app.renderer.generateTexture(graphics);
-      resolve();
-    });
-  }
-
-  private async loadGroundTexture() {
-    return new Promise<void>((resolve) => {
-      const image = new Image();
-      image.onload = () => {
-        this.tileTexture = Texture.from(image);
-        resolve();
-      };
-      image.onerror = () => {
-        const graphics = new Graphics();
-        graphics.beginFill(0x808080);
-        graphics.drawRect(0, 0, this.TILE_SIZE, this.TILE_SIZE);
-        graphics.lineStyle(1, 0x606060);
-        graphics.moveTo(0, 0);
-        graphics.lineTo(this.TILE_SIZE, this.TILE_SIZE);
-        graphics.moveTo(this.TILE_SIZE, 0);
-        graphics.lineTo(0, this.TILE_SIZE);
-        graphics.endFill();
-        this.tileTexture = this.app.renderer.generateTexture(graphics);
-        resolve();
-      };
-      image.src = 'assets/textures/ground.png';
-    });
-  }
-
-  private async loadAnimalTexture() {
-    return new Promise<void>((resolve) => {
-      const graphics = new Graphics();
-      graphics.beginFill(0xFF0000);
-      graphics.drawCircle(ANIMAL_SETTINGS.SIZE / 2, ANIMAL_SETTINGS.SIZE / 2, ANIMAL_SETTINGS.SIZE / 3);
-      graphics.endFill();
-      this.animalTexture = this.app.renderer.generateTexture(graphics);
-      resolve();
-    });
-  }
-
-  private initWorld() {
-    this.worldContainer = new Container();
-    this.tileContainer = new Container();
-    this.animalsContainer = new Container();
-    this.foodContainer = new Container();
-
-    this.worldContainer.addChild(this.tileContainer);
-    this.worldContainer.addChild(this.foodContainer);
-    this.worldContainer.addChild(this.animalsContainer);
-    this.app.stage.addChild(this.worldContainer);
-
-    this.updateVisibleTiles();
-  }
-
-  private getVisibleArea(): VisibleArea {
-    const offset = this.getCurrentOffset();
-    const scale = 1;
-
-    const startX = Math.floor((-offset.x + this.TILE_SIZE / 2) / (this.TILE_SIZE * scale)) - this.BUFFER_TILES;
-    const startY = Math.floor((-offset.y + this.TILE_SIZE / 2) / (this.TILE_SIZE * scale)) - this.BUFFER_TILES;
-    const tilesX = Math.ceil(this.app.screen.width / (this.TILE_SIZE * scale)) + this.BUFFER_TILES * 2;
-    const tilesY = Math.ceil(this.app.screen.height / (this.TILE_SIZE * scale)) + this.BUFFER_TILES * 2;
-
-    return {
-      startX,
-      startY,
-      endX: startX + tilesX,
-      endY: startY + tilesY
-    };
-  }
-
-  private updateVisibleTiles() {
-    const visibleArea = this.getVisibleArea();
-    const newTileKeys = new Set<string>();
-
-    for (let x = visibleArea.startX; x <= visibleArea.endX; x++) {
-      for (let y = visibleArea.startY; y <= visibleArea.endY; y++) {
-        const key = `${ x },${ y }`;
-        newTileKeys.add(key);
-
-        if (!this.activeTiles.has(key)) {
-          const sprite = new Sprite(this.tileTexture);
-          sprite.x = x * this.TILE_SIZE;
-          sprite.y = y * this.TILE_SIZE;
-          sprite.width = this.TILE_SIZE;
-          sprite.height = this.TILE_SIZE;
-          sprite.tint = 0x808080;
-
-          this.tileContainer.addChild(sprite);
-          this.activeTiles.set(key, sprite);
-        }
-      }
-    }
-
-    for (const [key, sprite] of this.activeTiles) {
-      if (!newTileKeys.has(key)) {
-        sprite.destroy();
-        this.activeTiles.delete(key);
-      }
-    }
-  }
-
-  private getCurrentOffset(): Point {
-    const offset = this.offset$.getValue();
-    const tempOffset = this.tempOffset$.getValue();
-    return {
-      x: offset.x + tempOffset.x,
-      y: offset.y + tempOffset.y
-    };
   }
 
   private setupControls() {
@@ -281,84 +153,27 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
       });
   }
 
+  private getCurrentOffset(): Point {
+    const offset = this.offset$.getValue();
+    const tempOffset = this.tempOffset$.getValue();
+    return {
+      x: offset.x + tempOffset.x,
+      y: offset.y + tempOffset.y
+    };
+  }
+
   private startGameLoop() {
     this.ngZone.runOutsideAngular(() => {
       this.app.ticker.add(() => {
         const offset = this.getCurrentOffset();
         this.worldContainer.x = offset.x;
         this.worldContainer.y = offset.y;
-        this.updateVisibleTiles();
+        this.tileLayer.updateVisibleTiles(
+          this.app.screen.width,
+          this.app.screen.height,
+          offset
+        );
       });
     });
   }
-
-  private updateAnimals(animals: Map<string, Animal>) {
-    for (const [id, sprite] of this.activeAnimals) {
-      if (!animals.has(id)) {
-        sprite.destroy();
-        this.activeAnimals.delete(id);
-      }
-    }
-
-    for (const [id, animal] of animals) {
-      const coordinates = animal.getCoordinates();
-      let sprite = this.activeAnimals.get(id);
-
-      if (!sprite) {
-        sprite = new Sprite(this.animalTexture);
-        sprite.width = ANIMAL_SETTINGS.SIZE;
-        sprite.height = ANIMAL_SETTINGS.SIZE;
-        sprite.anchor.set(0.5);
-        this.animalsContainer.addChild(sprite);
-        this.activeAnimals.set(id, sprite);
-      }
-
-      sprite.x = (coordinates.x * this.TILE_SIZE) + (this.TILE_SIZE / 2);
-      sprite.y = (coordinates.y * this.TILE_SIZE) + (this.TILE_SIZE / 2);
-    }
-  }
-
-  private subscribeToAnimals() {
-    this.animalsService.getAnimalsObservable()
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(animals => {
-        this.updateAnimals(animals);
-      });
-  }
-
-
-  private updateFood(food: Map<string, Food>) {
-    for (const [id, sprite] of this.activeFood) {
-      if (!food.has(id)) {
-        sprite.destroy();
-        this.activeFood.delete(id);
-      }
-    }
-
-    for (const [id, foodItem] of food) {
-      const coordinates = foodItem.getCoordinates();
-      let sprite = this.activeFood.get(id);
-
-      if (!sprite) {
-        sprite = new Sprite(this.foodTexture);
-        sprite.width = ANIMAL_SETTINGS.SIZE;
-        sprite.height = ANIMAL_SETTINGS.SIZE;
-        sprite.anchor.set(0.5);
-        this.foodContainer.addChild(sprite);
-        this.activeFood.set(id, sprite);
-      }
-
-      sprite.x = (coordinates.x * this.TILE_SIZE) + (this.TILE_SIZE / 2);
-      sprite.y = (coordinates.y * this.TILE_SIZE) + (this.TILE_SIZE / 2);
-    }
-  }
-
-  private subscribeToFood() {
-    this.foodService.getFoodObservable()
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(food => {
-        this.updateFood(food);
-      });
-  }
-
 }
