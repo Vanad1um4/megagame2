@@ -24,22 +24,12 @@ interface VisibleArea {
   selector: 'app-canvas',
   standalone: true,
   imports: [CommonModule],
-  template: '<canvas #gameCanvas></canvas>',
-  styles: [`
-    :host {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-  `]
+  templateUrl: './canvas.component.html',
+  styleUrl: './canvas.component.scss',
 })
 export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
-  @ViewChild('gameCanvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('gameCanvas', { static: true })
+  public canvasRef!: ElementRef<HTMLCanvasElement>;
 
   private readonly TILE_SIZE = 100;
   private readonly BUFFER_TILES = 1;
@@ -66,13 +56,35 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     private animalsService: AnimalsService
   ) { }
 
-  async ngOnInit() {
+  public async ngOnInit() {
     await this.initPixiApp();
     await this.loadTextures();
     this.initWorld();
     this.setupControls();
+    this.centerView();
     this.startGameLoop();
     this.subscribeToAnimals();
+  }
+
+  public ngAfterViewInit() {
+    const resizeObserver = new ResizeObserver(() => {
+      if (this.app?.renderer) {
+        const parent = this.canvasRef.nativeElement.parentElement;
+        if (parent) {
+          this.app.renderer.resize(parent.clientWidth, parent.clientHeight);
+          this.centerView();
+          this.updateVisibleTiles();
+        }
+      }
+    });
+
+    resizeObserver.observe(this.canvasRef.nativeElement);
+  }
+
+  public ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
+    this.app.destroy(true);
   }
 
   private async initPixiApp() {
@@ -82,6 +94,16 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
       resizeTo: this.canvasRef.nativeElement,
       antialias: true,
       backgroundColor: 0x666666,
+    });
+  }
+
+  private centerView() {
+    const centerX = this.app.screen.width / 2;
+    const centerY = this.app.screen.height / 2;
+
+    this.offset$.next({
+      x: centerX,
+      y: centerY
     });
   }
 
@@ -143,8 +165,8 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     const offset = this.getCurrentOffset();
     const scale = 1;
 
-    const startX = Math.floor(-offset.x / (this.TILE_SIZE * scale)) - this.BUFFER_TILES;
-    const startY = Math.floor(-offset.y / (this.TILE_SIZE * scale)) - this.BUFFER_TILES;
+    const startX = Math.floor((-offset.x + this.TILE_SIZE / 2) / (this.TILE_SIZE * scale)) - this.BUFFER_TILES;
+    const startY = Math.floor((-offset.y + this.TILE_SIZE / 2) / (this.TILE_SIZE * scale)) - this.BUFFER_TILES;
     const tilesX = Math.ceil(this.app.screen.width / (this.TILE_SIZE * scale)) + this.BUFFER_TILES * 2;
     const tilesY = Math.ceil(this.app.screen.height / (this.TILE_SIZE * scale)) + this.BUFFER_TILES * 2;
 
@@ -247,14 +269,6 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private subscribeToAnimals() {
-    this.animalsService.getAnimalsObservable()
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(animals => {
-        this.updateAnimals(animals);
-      });
-  }
-
   private updateAnimals(animals: Map<string, Animal>) {
     for (const [id, sprite] of this.activeAnimals) {
       if (!animals.has(id)) {
@@ -281,23 +295,11 @@ export class CanvasComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  ngAfterViewInit() {
-    const resizeObserver = new ResizeObserver(() => {
-      if (this.app?.renderer) {
-        const parent = this.canvasRef.nativeElement.parentElement;
-        if (parent) {
-          this.app.renderer.resize(parent.clientWidth, parent.clientHeight);
-          this.updateVisibleTiles();
-        }
-      }
-    });
-
-    resizeObserver.observe(this.canvasRef.nativeElement);
-  }
-
-  ngOnDestroy() {
-    this.destroy$.next();
-    this.destroy$.complete();
-    this.app.destroy(true);
+  private subscribeToAnimals() {
+    this.animalsService.getAnimalsObservable()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(animals => {
+        this.updateAnimals(animals);
+      });
   }
 }
